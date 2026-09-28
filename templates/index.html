@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASR Demo — Whisper</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f5f6fa;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid #e2e4ea;
+      padding: 24px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .logo {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, #6c63ff, #48d8bf);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; color: #fff;
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1.4rem; font-weight: 700; }
+    header p  { font-size: 0.85rem; color: #6b7280; margin-top: 2px; }
+
+    /* ── Badge row ── */
+    .badges {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      padding: 14px 40px;
+      background: #ffffff;
+      border-bottom: 1px solid #e2e4ea;
+    }
+    .badge {
+      background: #f0f1f8;
+      border: 1px solid #dde1f0;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.76rem;
+      font-weight: 500;
+      color: #4b5680;
+    }
+    .badge.model { background: #ede9fe; border-color: #c4b5fd; color: #5b21b6; }
+
+    /* ── Main grid ── */
+    main {
+      max-width: 1100px;
+      margin: 36px auto;
+      padding: 0 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 720px) {
+      main { grid-template-columns: 1fr; }
+      header, .badges { padding-left: 20px; padding-right: 20px; }
+    }
+
+    .card {
+      background: #ffffff;
+      border: 1px solid #e2e4ea;
+      border-radius: 14px;
+      padding: 24px;
+    }
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #9ca3af;
+      margin-bottom: 16px;
+    }
+
+    /* ── Samples ── */
+    .samples-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .sample-btn {
+      display: flex; flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 10px 12px;
+      background: #f9fafb;
+      border: 1px solid #e2e4ea;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: left;
+    }
+    .sample-btn:hover  { border-color: #6c63ff; background: #f3f0ff; }
+    .sample-btn.active { border-color: #6c63ff; background: #ede9fe; }
+    .sample-btn .lang  { font-size: 0.7rem; font-weight: 600; color: #6c63ff; }
+    .sample-btn .name  { font-weight: 500; color: #1a1a2e; }
+    .sample-btn .dur   { font-size: 0.7rem; color: #9ca3af; }
+
+    /* ── Drop zone ── */
+    #dropzone {
+      border: 2px dashed #d1d5db;
+      border-radius: 10px;
+      padding: 28px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      background: #fafafa;
+      margin-bottom: 16px;
+    }
+    #dropzone.drag-over { border-color: #6c63ff; background: #f3f0ff; }
+    #dropzone.has-file  { border-color: #48d8bf; background: #f0fdfb; }
+    .dropzone-icon { font-size: 2rem; margin-bottom: 8px; }
+    .dropzone-text { font-size: 0.85rem; color: #6b7280; line-height: 1.5; }
+    .dropzone-text strong { color: #1a1a2e; }
+    #file-name {
+      margin-top: 6px;
+      font-size: 0.8rem;
+      color: #6c63ff;
+      font-weight: 500;
+      min-height: 1.2em;
+    }
+    #file-input { display: none; }
+
+    /* ── Transcribe button ── */
+    #transcribe-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #6c63ff, #48d8bf);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    #transcribe-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #transcribe-btn:not(:disabled):hover { opacity: 0.9; }
+
+    #status {
+      margin-top: 12px;
+      font-size: 0.82rem;
+      color: #6b7280;
+      min-height: 1.2em;
+      text-align: center;
+    }
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid #d1d5db;
+      border-top-color: #6c63ff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Transcript box ── */
+    #transcript-box {
+      min-height: 220px;
+      background: #f9fafb;
+      border: 1px solid #e2e4ea;
+      border-radius: 10px;
+      padding: 16px;
+      font-size: 1rem;
+      line-height: 1.7;
+      color: #374151;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #transcript-box.empty { color: #9ca3af; font-style: italic; }
+
+    .copy-row {
+      display: flex; justify-content: flex-end; margin-top: 12px;
+    }
+    #copy-btn {
+      background: none;
+      border: 1px solid #e2e4ea;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.8rem;
+      color: #6b7280;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    #copy-btn:hover { border-color: #6c63ff; color: #6c63ff; }
+
+    /* ── Audio player ── */
+    #audio-player-wrap {
+      display: none;
+      margin-bottom: 16px;
+    }
+    #audio-player-wrap.visible { display: block; }
+    #audio-player {
+      width: 100%;
+      border-radius: 8px;
+      accent-color: #6c63ff;
+    }
+
+    /* ── Samples empty state ── */
+    .samples-empty {
+      grid-column: 1 / -1;
+      font-size: 0.82rem;
+      color: #9ca3af;
+      font-style: italic;
+      padding: 6px 2px;
+    }
+
+    /* ── Info footer ── */
+    .info-strip {
+      margin-top: 6px;
+      font-size: 0.75rem;
+      color: #9ca3af;
+      line-height: 1.5;
+    }
+
+    /* ── History section ── */
+    .history-section {
+      max-width: 1100px;
+      margin: 0 auto 48px;
+      padding: 0 24px;
+    }
+    .history-card {
+      background: #ffffff;
+      border: 1px solid #e2e4ea;
+      border-radius: 14px;
+      padding: 24px;
+    }
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .history-search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 200px;
+      max-width: 380px;
+    }
+    .history-search-wrap svg {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #9ca3af;
+      pointer-events: none;
+    }
+    #history-search {
+      width: 100%;
+      padding: 8px 12px 8px 34px;
+      border: 1px solid #e2e4ea;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      color: #1a1a2e;
+      background: #f9fafb;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #history-search:focus { border-color: #6c63ff; background: #fff; }
+    #history-count {
+      font-size: 0.78rem;
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+
+    #history-list { display: flex; flex-direction: column; gap: 10px; }
+
+    .history-item {
+      border: 1px solid #e2e4ea;
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: #fafafa;
+      transition: border-color 0.15s;
+    }
+    .history-item:hover { border-color: #c4b5fd; }
+    .history-item-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .history-item-filename {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    .history-item-time {
+      font-size: 0.74rem;
+      color: #9ca3af;
+      margin-left: auto;
+    }
+    .history-item-text {
+      font-size: 0.9rem;
+      color: #374151;
+      line-height: 1.6;
+      word-break: break-word;
+    }
+    .highlight {
+      background: #fef08a;
+      border-radius: 3px;
+      padding: 0 2px;
+      color: #1a1a2e;
+    }
+    #history-empty {
+      text-align: center;
+      padding: 32px 0;
+      font-size: 0.875rem;
+      color: #9ca3af;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🎙</div>
+  <div>
+    <h1>Automatic Speech Recognition</h1>
+    <p>Powered by Whisper large-v3-turbo &mdash; multilingual transcription demo</p>
+  </div>
+</header>
+
+<div class="badges">
+  <span class="badge model">openai/whisper-large-v3-turbo</span>
+  <span class="badge">🇬🇧 English</span>
+  <span class="badge">🇵🇰 Urdu</span>
+  <span class="badge">🇧🇩 Bengali</span>
+  <span class="badge">🇨🇳 Chinese</span>
+</div>
+
+<main>
+  <!-- ── Left column ── -->
+  <div class="card">
+    <div class="card-title">Choose audio</div>
+
+    <div class="samples-grid" id="samples-grid">
+      <!-- populated by JS -->
+    </div>
+
+    <div id="audio-player-wrap">
+      <audio id="audio-player" controls></audio>
+    </div>
+
+    <div id="dropzone" role="button" tabindex="0" aria-label="Upload audio file">
+      <div class="dropzone-icon">📂</div>
+      <div class="dropzone-text">
+        <strong>Click to upload</strong> or drag &amp; drop<br/>
+        MP3, WAV, OGG, FLAC, M4A &hellip;
+      </div>
+      <div id="file-name"></div>
+    </div>
+    <input type="file" id="file-input" accept="audio/*" />
+
+    <button id="transcribe-btn" disabled>Transcribe</button>
+    <div id="status"></div>
+
+    <div class="info-strip">
+      Audio is processed locally on the server. No data is stored.
+    </div>
+  </div>
+
+  <!-- ── Right column ── -->
+  <div class="card">
+    <div class="card-title">Transcript</div>
+    <div id="transcript-box" class="empty">Transcript will appear here&hellip;</div>
+    <div class="copy-row">
+      <button id="copy-btn" title="Copy to clipboard">Copy</button>
+    </div>
+  </div>
+</main>
+
+<!-- ── History & Search ── -->
+<section class="history-section">
+  <div class="history-card">
+    <div class="history-header">
+      <div class="card-title" style="margin-bottom:0">Transcript History &amp; Search</div>
+      <div class="history-search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input id="history-search" type="search" placeholder="Search filename or transcript…" autocomplete="off" />
+      </div>
+      <span id="history-count"></span>
+    </div>
+    <div id="history-list">
+      <div id="history-empty">No transcriptions yet. Transcribe an audio file to see the history.</div>
+    </div>
+  </div>
+</section>
+
+<script>
+  /* ── State ───────────────────────────────────────────────────── */
+  let selectedFile = null;
+  let activeBtn    = null;
+
+  /* ── Refs ────────────────────────────────────────────────────── */
+  const dropzone         = document.getElementById("dropzone");
+  const fileInput        = document.getElementById("file-input");
+  const fileNameEl       = document.getElementById("file-name");
+  const transcribeBtn    = document.getElementById("transcribe-btn");
+  const statusEl         = document.getElementById("status");
+  const transcriptBox    = document.getElementById("transcript-box");
+  const copyBtn          = document.getElementById("copy-btn");
+  const samplesGrid      = document.getElementById("samples-grid");
+  const audioPlayerWrap  = document.getElementById("audio-player-wrap");
+  const audioPlayer      = document.getElementById("audio-player");
+
+  /* ── Dynamic sample buttons ──────────────────────────────────── */
+  async function loadSamples() {
+    try {
+      const resp = await fetch("/samples");
+      if (!resp.ok) throw new Error("Could not load samples");
+      const data = await resp.json();
+      buildSampleButtons(data.samples || []);
+    } catch(e) {
+      samplesGrid.innerHTML = `<span class="samples-empty">Could not load samples: ${e.message}</span>`;
+    }
+  }
+
+  function buildSampleButtons(files) {
+    samplesGrid.innerHTML = "";
+    if (!files.length) {
+      samplesGrid.innerHTML = `<span class="samples-empty">No audio files found in /static. Drop files there and refresh.</span>`;
+      return;
+    }
+    files.forEach(filename => {
+      const btn = document.createElement("button");
+      btn.className = "sample-btn";
+      const stem = filename.replace(/\.[^.]+$/, "");
+      const ext  = filename.split(".").pop().toUpperCase();
+      btn.innerHTML = `<span class="lang">${ext}</span><span class="name">${stem}</span>`;
+      btn.addEventListener("click", () => loadSample(filename, btn));
+      samplesGrid.appendChild(btn);
+    });
+  }
+
+  async function loadSample(filename, btn) {
+    setActive(btn);
+    setStatus("Loading sample…");
+    try {
+      const resp = await fetch(`/static/${filename}`);
+      if (!resp.ok) throw new Error(`Sample not found: ${filename}`);
+      const blob = await resp.blob();
+      selectedFile = new File([blob], filename, { type: blob.type });
+      setFileDisplay(filename);
+      showPlayer(URL.createObjectURL(blob));
+      setStatus("");
+    } catch(e) {
+      setStatus("⚠ " + e.message);
+      selectedFile = null;
+      transcribeBtn.disabled = true;
+    }
+  }
+
+  function setActive(btn) {
+    if (activeBtn) activeBtn.classList.remove("active");
+    activeBtn = btn;
+    if (btn) btn.classList.add("active");
+  }
+
+  /* ── Dropzone ────────────────────────────────────────────────── */
+  dropzone.addEventListener("click", () => fileInput.click());
+  dropzone.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") fileInput.click(); });
+
+  dropzone.addEventListener("dragover", e => { e.preventDefault(); dropzone.classList.add("drag-over"); });
+  dropzone.addEventListener("dragleave", ()  => dropzone.classList.remove("drag-over"));
+  dropzone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropzone.classList.remove("drag-over");
+    const f = e.dataTransfer.files[0];
+    if (f) pickFile(f);
+  });
+
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files[0]) pickFile(fileInput.files[0]);
+  });
+
+  function pickFile(f) {
+    selectedFile = f;
+    setActive(null);
+    setFileDisplay(f.name);
+    showPlayer(URL.createObjectURL(f));
+    setStatus("");
+  }
+
+  function setFileDisplay(name) {
+    fileNameEl.textContent = name;
+    dropzone.classList.add("has-file");
+    transcribeBtn.disabled = false;
+  }
+
+  function showPlayer(objectUrl) {
+    audioPlayer.src = objectUrl;
+    audioPlayerWrap.classList.add("visible");
+  }
+
+  /* ── Transcribe ──────────────────────────────────────────────── */
+  transcribeBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    transcribeBtn.disabled = true;
+    transcriptBox.textContent = "";
+    transcriptBox.classList.add("empty");
+    setStatus('<span class="spinner"></span>Transcribing… this may take a moment');
+
+    const formData = new FormData();
+    formData.append("file", selectedFile, selectedFile.name);
+
+    try {
+      const resp = await fetch("/transcribe", { method: "POST", body: formData });
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`Server error ${resp.status}: ${err}`);
+      }
+      const data = await resp.json();
+      const text = data.transcript || "(empty result)";
+      transcriptBox.textContent = text;
+      transcriptBox.classList.remove("empty");
+      setStatus("✓ Done");
+      if (data.history) renderHistory(data.history);
+    } catch(e) {
+      setStatus("⚠ " + e.message);
+    } finally {
+      transcribeBtn.disabled = false;
+    }
+  });
+
+  /* ── Copy ────────────────────────────────────────────────────── */
+  copyBtn.addEventListener("click", () => {
+    const text = transcriptBox.textContent.trim();
+    if (!text || transcriptBox.classList.contains("empty")) return;
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+    });
+  });
+
+  function setStatus(html) {
+    statusEl.innerHTML = html;
+  }
+
+  /* ── History ─────────────────────────────────────────────────── */
+  let fullHistory = [];
+  const historyList   = document.getElementById("history-list");
+  const historyEmpty  = document.getElementById("history-empty");
+  const historySearch = document.getElementById("history-search");
+  const historyCount  = document.getElementById("history-count");
+
+  async function loadHistory() {
+    try {
+      const resp = await fetch("/history");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      renderHistory(data.history || []);
+    } catch(_) {}
+  }
+
+  function renderHistory(items) {
+    fullHistory = items.slice().reverse(); // newest first
+    applyFilter();
+  }
+
+  function applyFilter() {
+    const q = historySearch.value.trim().toLowerCase();
+    const filtered = q
+      ? fullHistory.filter(e =>
+          e.filename.toLowerCase().includes(q) ||
+          e.transcript.toLowerCase().includes(q))
+      : fullHistory;
+
+    historyCount.textContent = filtered.length
+      ? `${filtered.length} result${filtered.length === 1 ? "" : "s"}`
+      : "";
+
+    if (!filtered.length) {
+      historyList.innerHTML = "";
+      historyList.appendChild(historyEmpty);
+      historyEmpty.textContent = fullHistory.length
+        ? "No results match your search."
+        : "No transcriptions yet. Transcribe an audio file to see the history.";
+      return;
+    }
+
+    historyList.innerHTML = "";
+    filtered.forEach(entry => {
+      const item = document.createElement("div");
+      item.className = "history-item";
+
+      const ts = new Date(entry.timestamp).toLocaleString(undefined, {
+        dateStyle: "medium", timeStyle: "short"
+      });
+
+      item.innerHTML = `
+        <div class="history-item-meta">
+          <span class="history-item-filename">${escapeHtml(entry.filename)}</span>
+          <span class="history-item-time">${ts}</span>
+        </div>
+        <div class="history-item-text">${highlight(entry.transcript, q)}</div>`;
+      historyList.appendChild(item);
+    });
+  }
+
+  function highlight(text, q) {
+    const safe = escapeHtml(text);
+    if (!q) return safe;
+    const regex = new RegExp(`(${escapeRegex(escapeHtml(q))})`, "gi");
+    return safe.replace(regex, '<span class="highlight">$1</span>');
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  historySearch.addEventListener("input", applyFilter);
+
+  loadSamples();
+  loadHistory();
+</script>
+</body>
+</html>
