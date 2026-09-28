@@ -1,16 +1,25 @@
 import os
 import uuid
-import tempfile
+import logging
 from datetime import datetime, timezone
 
 import groq
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile, Request
+from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+_api_key = os.environ.get("GROQ_API_KEY")
+if not _api_key:
+    raise RuntimeError("GROQ_API_KEY environment variable is not set.")
+
+client = groq.Groq(api_key=_api_key)
 
 app = FastAPI()
 
@@ -18,8 +27,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 transcript_history: list[dict] = []
-
-client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 
 @app.get("/")
@@ -29,31 +36,25 @@ async def index(request: Request):
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
-    suffix = os.path.splitext(file.filename)[-1] or ".audio"
-    tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(await file.read())
-            tmp_path = tmp.name
+        audio_bytes = await file.read()
+        response = client.audio.transcriptions.create(
+            file=(file.filename, audio_bytes),
+            model="whisper-large-v3",
+        )
+    except Exception as e:
+        logger.error("Groq transcription failed: %s", e)
+        raise HTTPException(status_code=500, detail="Transcription failed. Please try again.")
 
-        with open(tmp_path, "rb") as audio_file:
-            response = client.audio.transcriptions.create(
-                file=(file.filename, audio_file),
-                model="whisper-large-v3",
-            )
-
-        transcript = response.text.strip()
-        entry = {
-            "id": str(uuid.uuid4()),
-            "filename": file.filename,
-            "transcript": transcript,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-        transcript_history.append(entry)
-        return JSONResponse({"transcript": transcript, "history": transcript_history})
-    finally:
-        if tmp_path and os.path.exists(tmp_path):
-            os.remove(tmp_path)
+    transcript = response.text.strip()
+    entry = {
+        "id": str(uuid.uuid4()),
+        "filename": file.filename,
+        "transcript": transcript,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    transcript_history.append(entry)
+    return JSONResponse({"transcript": transcript, "history": transcript_history})
 
 
 @app.get("/history")
