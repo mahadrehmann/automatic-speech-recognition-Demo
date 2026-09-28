@@ -2,12 +2,15 @@ import os
 import uuid
 import tempfile
 from datetime import datetime, timezone
-import torch
+
+import groq
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from transformers import pipeline
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -16,14 +19,7 @@ templates = Jinja2Templates(directory="templates")
 
 transcript_history: list[dict] = []
 
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
-
-asr_pipeline = pipeline(
-    "automatic-speech-recognition",
-    model="openai/whisper-large-v3-turbo",
-    device=device,
-    chunk_length_s=30,
-)
+client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 
 @app.get("/")
@@ -40,12 +36,13 @@ async def transcribe(file: UploadFile = File(...)):
             tmp.write(await file.read())
             tmp_path = tmp.name
 
-        result = asr_pipeline(
-            tmp_path,
-            generate_kwargs={"task": "transcribe"},
-            return_timestamps=False,
-        )
-        transcript = result.get("text", "").strip()
+        with open(tmp_path, "rb") as audio_file:
+            response = client.audio.transcriptions.create(
+                file=(file.filename, audio_file),
+                model="whisper-large-v3",
+            )
+
+        transcript = response.text.strip()
         entry = {
             "id": str(uuid.uuid4()),
             "filename": file.filename,

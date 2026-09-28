@@ -42,3 +42,4 @@ desktop.ini
 # Env vars
 .env
 .env.*
+!.env.example

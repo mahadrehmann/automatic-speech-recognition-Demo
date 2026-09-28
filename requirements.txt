@@ -2,7 +2,5 @@ fastapi
 uvicorn[standard]
 python-multipart
 jinja2
-transformers
-torch
-torchaudio
-librosa
+groq
+python-dotenv
