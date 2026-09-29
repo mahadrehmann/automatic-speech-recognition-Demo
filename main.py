@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 import groq
+from google import genai
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, UploadFile, Request, HTTPException
 from fastapi.responses import JSONResponse
@@ -19,7 +20,12 @@ _api_key = os.environ.get("GROQ_API_KEY")
 if not _api_key:
     raise RuntimeError("GROQ_API_KEY environment variable is not set.")
 
+_gemini_api_key = os.environ.get("GEMINI_API_KEY")
+if not _gemini_api_key:
+    raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
+
 client = groq.Groq(api_key=_api_key)
+gemini_client = genai.Client(api_key=_gemini_api_key)
 
 app = FastAPI()
 
@@ -58,31 +64,13 @@ async def transcribe(file: UploadFile = File(...)):
         english_translation = original_text
     else:
         try:
-            chat_response = client.chat.completions.create(
-                model="openai/gpt-oss-20b",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are a professional translator. "
-                            "Translate the user's transcript into natural, fluent English. "
-                            "Preserve the original meaning, tone, and context exactly. "
-                            "Return only the translated text with no commentary or explanation."
-                        ),
-                    },
-                    {
-                        "role": "user",
-                        "content": original_text,
-                    },
-                ],
-                temperature=0.2,
-                max_completion_tokens=4096,
-                reasoning_format="hidden",
-                reasoning_effort="low",
+            response = gemini_client.models.generate_content(
+                model="gemini-3.8-flash",
+                contents=f"Translate this transcript to natural, fluent English. Return only the translated text:\n\n{original_text}",
             )
-            english_translation = chat_response.choices[0].message.content.strip()
+            english_translation = response.text.strip()
         except Exception as e:
-            logger.error("Groq LLM translation failed: %s", e)
+            logger.error("Gemini translation failed: %s", e)
             raise HTTPException(status_code=500, detail="Translation failed. Please try again.")
 
     entry = {
