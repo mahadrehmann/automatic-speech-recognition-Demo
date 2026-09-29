@@ -554,12 +554,13 @@
     if (!selectedFile) return;
 
     transcribeBtn.disabled = true;
+    transcribeBtn.innerHTML = '<span class="spinner"></span>Transcribing…';
     originalBox.textContent    = "";
     translationBox.textContent = "";
     originalBox.classList.add("empty");
     translationBox.classList.add("empty");
     detectedLangBadge.style.display = "none";
-    setStatus('<span class="spinner"></span>Transcribing… this may take a moment');
+    setStatus('<span class="spinner"></span>This may take a moment…');
 
     const formData = new FormData();
     formData.append("file", selectedFile, selectedFile.name);
@@ -589,6 +590,7 @@
       setStatus("⚠ " + e.message);
     } finally {
       transcribeBtn.disabled = false;
+      transcribeBtn.textContent = "Transcribe";
     }
   });
 
