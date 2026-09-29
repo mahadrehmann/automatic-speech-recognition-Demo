@@ -53,18 +53,33 @@ async def transcribe(file: UploadFile = File(...)):
     detected_language = (getattr(transcript_response, "language", None) or "").lower()
     logger.info("Detected language: %s", detected_language)
 
-    # Skip the translation call when audio is already in English
+    # Skip translation when audio is already in English
     if detected_language in ("english", "en"):
         english_translation = original_text
     else:
         try:
-            translation_response = client.audio.translations.create(
-                file=(file.filename, audio_bytes),
-                model="whisper-large-v3",
+            chat_response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a professional translator. "
+                            "Translate the user's transcript into natural, fluent English. "
+                            "Preserve the original meaning, tone, and context exactly. "
+                            "Return only the translated text with no commentary or explanation."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": original_text,
+                    },
+                ],
+                temperature=0.2,
             )
-            english_translation = translation_response.text.strip()
+            english_translation = chat_response.choices[0].message.content.strip()
         except Exception as e:
-            logger.error("Groq translation failed: %s", e)
+            logger.error("Groq LLM translation failed: %s", e)
             raise HTTPException(status_code=500, detail="Translation failed. Please try again.")
 
     entry = {
