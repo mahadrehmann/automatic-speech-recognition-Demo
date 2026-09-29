@@ -65,7 +65,7 @@ async def transcribe(file: UploadFile = File(...)):
     else:
         try:
             response = gemini_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-3.5-flash-lite",
                 contents=f"Translate this transcript to natural, fluent English. Return only the translated text:\n\n{original_text}",
             )
             english_translation = response.text.strip()
