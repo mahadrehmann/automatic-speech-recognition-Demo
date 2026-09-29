@@ -76,6 +76,7 @@ async def transcribe(file: UploadFile = File(...)):
                     },
                 ],
                 temperature=0.2,
+                max_completion_tokens=4096,
             )
             english_translation = chat_response.choices[0].message.content.strip()
         except Exception as e:
