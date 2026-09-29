@@ -36,25 +36,52 @@ async def index(request: Request):
 
 @app.post("/transcribe")
 async def transcribe(file: UploadFile = File(...)):
+    audio_bytes = await file.read()
+
+    # Transcribe in the source language and detect what it is
     try:
-        audio_bytes = await file.read()
-        response = client.audio.transcriptions.create(
+        transcript_response = client.audio.transcriptions.create(
             file=(file.filename, audio_bytes),
             model="whisper-large-v3",
+            response_format="verbose_json",
         )
     except Exception as e:
         logger.error("Groq transcription failed: %s", e)
         raise HTTPException(status_code=500, detail="Transcription failed. Please try again.")
 
-    transcript = response.text.strip()
+    original_text     = transcript_response.text.strip()
+    detected_language = (getattr(transcript_response, "language", None) or "").lower()
+    logger.info("Detected language: %s", detected_language)
+
+    # Skip the translation call when audio is already in English
+    if detected_language in ("english", "en"):
+        english_translation = original_text
+    else:
+        try:
+            translation_response = client.audio.translations.create(
+                file=(file.filename, audio_bytes),
+                model="whisper-large-v3",
+            )
+            english_translation = translation_response.text.strip()
+        except Exception as e:
+            logger.error("Groq translation failed: %s", e)
+            raise HTTPException(status_code=500, detail="Translation failed. Please try again.")
+
     entry = {
         "id": str(uuid.uuid4()),
         "filename": file.filename,
-        "transcript": transcript,
+        "original_text": original_text,
+        "english_translation": english_translation,
+        "detected_language": detected_language,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     transcript_history.append(entry)
-    return JSONResponse({"transcript": transcript, "history": transcript_history})
+    return JSONResponse({
+        "original_text": original_text,
+        "english_translation": english_translation,
+        "detected_language": detected_language,
+        "history": transcript_history,
+    })
 
 
 @app.get("/history")

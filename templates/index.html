@@ -167,23 +167,48 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Transcript box ── */
-    #transcript-box {
-      min-height: 220px;
+    /* ── Transcript boxes ── */
+    .transcript-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #9ca3af;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .lang-badge {
+      background: #ede9fe;
+      color: #5b21b6;
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .transcript-box {
+      min-height: 90px;
       background: #f9fafb;
       border: 1px solid #e2e4ea;
       border-radius: 10px;
-      padding: 16px;
-      font-size: 1rem;
+      padding: 14px 16px;
+      font-size: 0.95rem;
       line-height: 1.7;
       color: #374151;
       white-space: pre-wrap;
       word-break: break-word;
+      margin-bottom: 14px;
     }
-    #transcript-box.empty { color: #9ca3af; font-style: italic; }
+    .transcript-box.empty { color: #9ca3af; font-style: italic; }
+
+    /* keep old id working as alias */
+    #transcript-box { display: none; }
 
     .copy-row {
-      display: flex; justify-content: flex-end; margin-top: 12px;
+      display: flex; justify-content: flex-end; margin-top: 4px;
     }
     #copy-btn {
       background: none;
@@ -378,9 +403,21 @@
   <!-- ── Right column ── -->
   <div class="card">
     <div class="card-title">Transcript</div>
-    <div id="transcript-box" class="empty">Transcript will appear here&hellip;</div>
+
+    <div class="transcript-label">
+      Original
+      <span id="detected-lang-badge" class="lang-badge" style="display:none"></span>
+    </div>
+    <div id="original-box" class="transcript-box empty">Original transcript will appear here&hellip;</div>
+
+    <div class="transcript-label">English Translation</div>
+    <div id="translation-box" class="transcript-box empty">English translation will appear here&hellip;</div>
+
+    <!-- hidden; keeps old JS references from breaking -->
+    <div id="transcript-box"></div>
+
     <div class="copy-row">
-      <button id="copy-btn" title="Copy to clipboard">Copy</button>
+      <button id="copy-btn" title="Copy English translation to clipboard">Copy translation</button>
     </div>
   </div>
 </main>
@@ -410,16 +447,18 @@
   let activeBtn    = null;
 
   /* ── Refs ────────────────────────────────────────────────────── */
-  const dropzone         = document.getElementById("dropzone");
-  const fileInput        = document.getElementById("file-input");
-  const fileNameEl       = document.getElementById("file-name");
-  const transcribeBtn    = document.getElementById("transcribe-btn");
-  const statusEl         = document.getElementById("status");
-  const transcriptBox    = document.getElementById("transcript-box");
-  const copyBtn          = document.getElementById("copy-btn");
-  const samplesGrid      = document.getElementById("samples-grid");
-  const audioPlayerWrap  = document.getElementById("audio-player-wrap");
-  const audioPlayer      = document.getElementById("audio-player");
+  const dropzone           = document.getElementById("dropzone");
+  const fileInput          = document.getElementById("file-input");
+  const fileNameEl         = document.getElementById("file-name");
+  const transcribeBtn      = document.getElementById("transcribe-btn");
+  const statusEl           = document.getElementById("status");
+  const originalBox        = document.getElementById("original-box");
+  const translationBox     = document.getElementById("translation-box");
+  const detectedLangBadge  = document.getElementById("detected-lang-badge");
+  const copyBtn            = document.getElementById("copy-btn");
+  const samplesGrid        = document.getElementById("samples-grid");
+  const audioPlayerWrap    = document.getElementById("audio-player-wrap");
+  const audioPlayer        = document.getElementById("audio-player");
 
   /* ── Dynamic sample buttons ──────────────────────────────────── */
   async function loadSamples() {
@@ -515,8 +554,11 @@
     if (!selectedFile) return;
 
     transcribeBtn.disabled = true;
-    transcriptBox.textContent = "";
-    transcriptBox.classList.add("empty");
+    originalBox.textContent    = "";
+    translationBox.textContent = "";
+    originalBox.classList.add("empty");
+    translationBox.classList.add("empty");
+    detectedLangBadge.style.display = "none";
     setStatus('<span class="spinner"></span>Transcribing… this may take a moment');
 
     const formData = new FormData();
@@ -529,9 +571,18 @@
         throw new Error(`Server error ${resp.status}: ${err}`);
       }
       const data = await resp.json();
-      const text = data.transcript || "(empty result)";
-      transcriptBox.textContent = text;
-      transcriptBox.classList.remove("empty");
+
+      originalBox.textContent = data.original_text || "(empty result)";
+      originalBox.classList.remove("empty");
+
+      translationBox.textContent = data.english_translation || "(empty result)";
+      translationBox.classList.remove("empty");
+
+      if (data.detected_language) {
+        detectedLangBadge.textContent = data.detected_language;
+        detectedLangBadge.style.display = "inline";
+      }
+
       setStatus("✓ Done");
       if (data.history) renderHistory(data.history);
     } catch(e) {
@@ -543,11 +594,11 @@
 
   /* ── Copy ────────────────────────────────────────────────────── */
   copyBtn.addEventListener("click", () => {
-    const text = transcriptBox.textContent.trim();
-    if (!text || transcriptBox.classList.contains("empty")) return;
+    const text = translationBox.textContent.trim();
+    if (!text || translationBox.classList.contains("empty")) return;
     navigator.clipboard.writeText(text).then(() => {
       copyBtn.textContent = "Copied!";
-      setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+      setTimeout(() => (copyBtn.textContent = "Copy translation"), 1500);
     });
   });
 
@@ -580,8 +631,9 @@
     const q = historySearch.value.trim().toLowerCase();
     const filtered = q
       ? fullHistory.filter(e =>
-          e.filename.toLowerCase().includes(q) ||
-          e.transcript.toLowerCase().includes(q))
+          (e.filename || "").toLowerCase().includes(q) ||
+          (e.original_text || "").toLowerCase().includes(q) ||
+          (e.english_translation || "").toLowerCase().includes(q))
       : fullHistory;
 
     historyCount.textContent = filtered.length
@@ -606,12 +658,27 @@
         dateStyle: "medium", timeStyle: "short"
       });
 
+      const langBadge = entry.detected_language
+        ? `<span class="lang-badge">${escapeHtml(entry.detected_language)}</span>`
+        : "";
+
+      const showTranslation = entry.english_translation &&
+        entry.english_translation !== entry.original_text;
+
       item.innerHTML = `
         <div class="history-item-meta">
           <span class="history-item-filename">${escapeHtml(entry.filename)}</span>
+          ${langBadge}
           <span class="history-item-time">${ts}</span>
         </div>
-        <div class="history-item-text">${highlight(entry.transcript, q)}</div>`;
+        <div class="transcript-label" style="margin-bottom:4px">Original</div>
+        <div class="history-item-text" style="margin-bottom:${showTranslation ? "10px" : "0"}">
+          ${highlight(entry.original_text || "", q)}
+        </div>
+        ${showTranslation ? `
+        <div class="transcript-label" style="margin-bottom:4px">English Translation</div>
+        <div class="history-item-text">${highlight(entry.english_translation, q)}</div>
+        ` : ""}`;
       historyList.appendChild(item);
     });
   }
